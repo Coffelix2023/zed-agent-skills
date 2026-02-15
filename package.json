@@ -1,0 +1,36 @@
+{
+  "name": "zed-agent-skills",
+  "version": "2.0.0",
+  "description": "MCP Server for Zed Agent - Enables Superpowers skill system with auto-injection and dynamic loading",
+  "type": "module",
+  "bin": {
+    "zed-agent-skills": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod 755 build/index.js",
+    "dev": "tsc --watch",
+    "clean": "rm -rf build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "zed",
+    "agent",
+    "skills",
+    "superpowers",
+    "llm"
+  ],
+  "author": "Felix (@Coffelix2023)",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.6",
+    "typescript": "^5.7.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Coffelix2023/zed-agent-skills.git"
+  }
+}
