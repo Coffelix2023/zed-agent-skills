@@ -1,6 +1,6 @@
 {
   "name": "zed-agent-skills",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "MCP Server for Zed Agent - Enables Superpowers skill system with auto-injection and dynamic loading",
   "type": "module",
   "bin": {
@@ -20,7 +20,7 @@
     "superpowers",
     "llm"
   ],
-  "author": "Felix (@Coffelix2023)",
+  "author": "Coffelix",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0"

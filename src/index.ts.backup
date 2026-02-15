@@ -3,12 +3,11 @@
  * Zed Agent Skills MCP Server
  *
  * Enables Superpowers skill system in Zed Editor through Model Context Protocol.
- * Provides three key capabilities:
+ * Provides two key capabilities:
  * 1. Prompts: Auto-inject `using-superpowers` at session start
  * 2. Tools: Dynamic skill loading on-demand
- * 3. Tools: One-click activation via activate_superpowers
  *
- * @version 3.0.0
+ * @version 2.0.0
  * @author Coffelix
  */
 
@@ -28,14 +27,18 @@ import os from "os";
 
 /**
  * Multi-layer skill directory priority
+ * Priority 1: Project-specific skills
+ * Priority 2: Personal skills
+ * Priority 3: Superpowers framework skills (via symlink)
  */
 const SKILL_DIRS = [
-    path.join(os.homedir(), ".agents", "skills"),
-    path.join(os.homedir(), ".claude", "skills"),
+    path.join(os.homedir(), ".agents", "skills"), // Project-level
+    path.join(os.homedir(), ".claude", "skills"), // Personal
 ];
 
 /**
  * Path to the core Superpowers skill
+ * This skill teaches the agent how to use all other skills
  */
 const USING_SUPERPOWERS_SKILL = path.join(
     os.homedir(),
@@ -47,18 +50,22 @@ const USING_SUPERPOWERS_SKILL = path.join(
 const server = new Server(
     {
         name: "zed-agent-skills",
-        version: "3.0.0",
+        version: "2.0.0",
     },
     {
         capabilities: {
-            tools: {},
-            prompts: {},
+            tools: {}, // Enable dynamic skill loading
+            prompts: {}, // Enable session initialization
         },
     },
 );
 
 // ==================== Skill Loading Functions ====================
 
+/**
+ * Load a skill by name with priority search
+ * Searches through SKILL_DIRS in order until found
+ */
 async function loadSkill(skillName: string): Promise<string | null> {
     for (const dir of SKILL_DIRS) {
         try {
@@ -66,12 +73,17 @@ async function loadSkill(skillName: string): Promise<string | null> {
             const content = await fs.readFile(skillPath, "utf-8");
             return content;
         } catch {
+            // Skill not found in this directory, try next
             continue;
         }
     }
     return null;
 }
 
+/**
+ * List all available skills across all directories
+ * Returns deduplicated sorted list
+ */
 async function listSkills(): Promise<string[]> {
     const allSkills = new Set<string>();
 
@@ -82,6 +94,7 @@ async function listSkills(): Promise<string[]> {
                 .filter((e) => e.isDirectory())
                 .forEach((e) => allSkills.add(e.name));
         } catch {
+            // Directory doesn't exist or not readable, skip
             continue;
         }
     }
@@ -89,37 +102,51 @@ async function listSkills(): Promise<string[]> {
     return Array.from(allSkills).sort();
 }
 
+/**
+ * Load the using-superpowers skill
+ * This is the core skill that teaches the agent the workflow
+ */
 async function loadUsingSuperPowersSkill(): Promise<string> {
     try {
         return await fs.readFile(USING_SUPERPOWERS_SKILL, "utf-8");
     } catch (error) {
         throw new Error(
             `Failed to load using-superpowers skill: ${error}\n` +
-                `Expected path: ${USING_SUPERPOWERS_SKILL}`,
+                `Expected path: ${USING_SUPERPOWERS_SKILL}\n` +
+                `Please ensure ~/.claude/skills/using-superpowers/SKILL.md exists.`,
         );
     }
 }
 
-// ==================== MCP Prompts ====================
+// ==================== MCP Prompts (Session Initialization) ====================
 
+/**
+ * List available prompts
+ * Currently provides "initialize" prompt for session start
+ */
 server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: [
         {
             name: "initialize",
             description:
                 "🚀 Initialize Superpowers workflow - Loads using-superpowers skill. " +
-                "USE THIS AT THE START OF EVERY NEW CONVERSATION.",
+                "USE THIS AT THE START OF EVERY NEW CONVERSATION to enable skill-based development.",
             arguments: [],
         },
     ],
 }));
 
+/**
+ * Handle prompt requests
+ * "initialize" prompt injects using-superpowers into context
+ */
 server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const { name } = request.params;
 
     if (name === "initialize") {
         try {
             const content = await loadUsingSuperPowersSkill();
+
             return {
                 messages: [
                     {
@@ -128,6 +155,8 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
                             type: "text",
                             text: `<EXTREMELY_IMPORTANT>
 You have superpowers.
+
+**Below is the full content of your 'using-superpowers' skill - your introduction to using skills. For all other skills, use the load_skill tool:**
 
 ${content}
 
@@ -143,7 +172,7 @@ ${content}
                         role: "user",
                         content: {
                             type: "text",
-                            text: `❌ Failed to initialize: ${error}`,
+                            text: `❌ Failed to initialize Superpowers: ${error}`,
                         },
                     },
                 ],
@@ -154,30 +183,25 @@ ${content}
     throw new Error(`Unknown prompt: ${name}`);
 });
 
-// ==================== MCP Tools ====================
+// ==================== MCP Tools (Dynamic Skill Loading) ====================
 
+/**
+ * List available tools
+ */
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
         {
-            name: "activate_superpowers",
-            description:
-                "🚀 ACTIVATE SKILLS SYSTEM - Call this FIRST in new conversations. " +
-                "Loads using-superpowers skill and enables skill-based workflow.",
-            inputSchema: {
-                type: "object",
-                properties: {},
-            },
-        },
-        {
             name: "load_skill",
             description:
-                "Load a specific skill's content. Use when you need a particular skill.",
+                "Load a skill's full content. Use BEFORE any task if there's even a 1% chance a skill applies. " +
+                "Skills contain workflows, checklists, and best practices.",
             inputSchema: {
                 type: "object",
                 properties: {
                     skill_name: {
                         type: "string",
-                        description: "Skill name (e.g., 'hello-skill', 'architecture-designer')",
+                        description:
+                            "Skill name (e.g., 'test-driven-development', 'kontext-expert', 'systematic-debugging')",
                     },
                 },
                 required: ["skill_name"],
@@ -185,7 +209,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "list_skills",
-            description: "List all available skills",
+            description:
+                "List all available skills across personal and framework directories",
             inputSchema: {
                 type: "object",
                 properties: {},
@@ -194,42 +219,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     ],
 }));
 
+/**
+ * Handle tool calls
+ */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-
-    // NEW: activate_superpowers tool
-    if (name === "activate_superpowers") {
-        try {
-            const content = await loadUsingSuperPowersSkill();
-            const skillCount = (await listSkills()).length;
-            
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: `✅ SUPERPOWERS ACTIVATED ✅
-
-You now have access to ${skillCount} skills.
-
-Below is the using-superpowers skill that teaches you how to use them:
-
-${content}
-
-⚡ Remember: Check for relevant skills before each task.`,
-                    },
-                ],
-            };
-        } catch (error) {
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: `❌ Failed to activate superpowers: ${error}`,
-                    },
-                ],
-            };
-        }
-    }
 
     if (name === "load_skill") {
         const skillName = (args as { skill_name: string }).skill_name;
@@ -244,7 +238,8 @@ ${content}
                         text:
                             `❌ Skill '${skillName}' not found.\n\n` +
                             `Available skills (${availableSkills.length}):\n` +
-                            availableSkills.map((s) => `- ${s}`).join("\n"),
+                            availableSkills.map((s) => `- ${s}`).join("\n") +
+                            `\n\nUse list_skills to see all available skills.`,
                     },
                 ],
             };
@@ -291,15 +286,39 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    console.error("╔════════════════════════════════════════════════════════════╗");
-    console.error("║  🚀 Zed Agent Skills MCP Server v3.0.0                    ║");
-    console.error("╠════════════════════════════════════════════════════════════╣");
-    console.error("║  📌 Prompts: initialize                                    ║");
-    console.error("║  🔧 Tools: activate_superpowers, load_skill, list_skills  ║");
-    console.error("╚════════════════════════════════════════════════════════════╝");
+    console.error(
+        "╔════════════════════════════════════════════════════════════╗",
+    );
+    console.error(
+        "║  🚀 Zed Agent Skills MCP Server v2.0.0                    ║",
+    );
+    console.error(
+        "╠════════════════════════════════════════════════════════════╣",
+    );
+    console.error(
+        "║  Capabilities:                                             ║",
+    );
+    console.error(
+        "║    📌 Prompts: initialize                                  ║",
+    );
+    console.error(
+        "║    🔧 Tools: load_skill, list_skills                       ║",
+    );
+    console.error(
+        "╠════════════════════════════════════════════════════════════╣",
+    );
+    console.error(
+        "║  Skill Directories:                                        ║",
+    );
+    for (const dir of SKILL_DIRS) {
+        console.error(`║    - ${dir.padEnd(53)}║`);
+    }
+    console.error(
+        "╚════════════════════════════════════════════════════════════╝",
+    );
 }
 
 main().catch((error) => {
-    console.error("❌ Fatal error:", error);
+    console.error("❌ Fatal error in MCP server:", error);
     process.exit(1);
 });
